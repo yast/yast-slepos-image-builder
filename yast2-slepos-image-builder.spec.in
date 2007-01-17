@@ -1,0 +1,31 @@
+@HEADER-COMMENT@
+# neededforbuild yast2-devel-packages yast2-slepos-common yast2-country yast2-network yast2-installation yast2-users yast2-security yast2-pam cracklib-devel gpp libgpp yast2-mail-aliases yast2-ldap-client yast2-perl-bindings perl-Digest-SHA1 perl-gettext perl-XML-XQL perl-XML-DOM perl-XML-Writer perl-XML-RegExp perl-XML-Parser expat perl-libwww-perl perl-URI perl-Parse-Yapp
+
+@HEADER@
+Requires:	yast2 yast2-slepos-common yast2-packager yast2-country yast2-network yast2-users yast2-perl-bindings yast2-pam yast2-security yast2-packager yast2-mail-aliases cracklib perl-Digest-SHA1 perl-gettext yast2-ldap-client perl-XML-XQL perl-XML-DOM perl-XML-Writer perl-XML-RegExp perl-XML-Parser expat perl-libwww-perl perl-URI perl-Parse-Yapp POS_Image-Builder2
+
+BuildArchitectures:	noarch
+
+Summary:	Novell Linux Point of Service Image Builder
+
+%description
+- YaST wizard for building Novell Linux Point of Service images.
+
+@PREP@
+
+@BUILD@
+
+@INSTALL@
+
+@CLEAN@
+
+%files
+%defattr(-,root,root)
+%dir @yncludedir@/slepos-image-builder
+@yncludedir@/slepos-image-builder/*
+@clientdir@/slepos-image-builder.ycp
+@clientdir@/slepos-image-builder_*.ycp
+@moduledir@/SleposImageBuilder.*
+@moduledir@/Slepos*.pm
+@desktopdir@/slepos-image-builder.desktop
+%doc @docdir@

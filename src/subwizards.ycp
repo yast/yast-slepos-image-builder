@@ -1,0 +1,209 @@
+/**
+ * File:	include/slepos-image-builder/subwizards.ycp
+ * Package:	Configuration of slepos-image-builder
+ * Summary:	Wizards definitions
+ * Authors:	Michael G. Fritch <mgfritch@novell.com>
+ *
+ * $Id: wizards.ycp,v 1.6 2004/02/05 11:29:30 msvec Exp $
+ */
+
+{
+
+textdomain "slepos-image-builder";
+
+import "Sequencer";
+import "Wizard";
+
+include "slepos-image-builder/complex.ycp";
+include "slepos-image-builder/subdialogs.ycp";
+include "slepos-image-builder/users/wizards.ycp";
+
+/**
+ * Workflow for duplicating an existing image descr. tree
+ * @return sequence result
+ */
+any DuplicateImageSequence() {
+
+	map aliases = $[
+		"duplicate"	: ``(DuplicateImageDialog()),
+	];
+
+	map sequence = $[
+		"ws_start" : "duplicate",
+		"duplicate" : $[
+			`abort	: `abort,
+			`next	: `next,
+		],
+	];
+
+	//return Sequencer::Run(aliases, sequence);
+
+	Wizard::CreateDialog();
+	Wizard::SetDesktopIcon("slepos-image-builder");
+
+	any ret = Sequencer::Run(aliases, sequence);
+
+	UI::CloseDialog();
+	return ret;
+}
+
+
+/**
+ * Workflow for editing an existing image description tree
+ * @param string image key
+ * @param map of user/group settings read in from the image XML files.
+ * @return sequence result
+ */
+any ModifyImageSequence(string image_key) {
+
+	map aliases = $[
+		"summary"	: ``(SummaryDialog()),
+		"locale"	: ``(LocaleDialog()),
+		"timezone"	: ``(TimezoneDialog()),
+//		"users_import"	: ``(ImportUserSettings()),
+		"users_modify"	: ``(UsersMainSequence("summary", image_key)),
+		"users_export"	: ``(ExportUserSettings()),
+		"addon"		: ``(AddonDialog()),
+		"driver"	: ``(DriverDialog()),
+		"options"	: ``(ImageTypeOptionsDialog()),
+		"rpm_dist"	: ``(PackageSelectorDialog()),
+		"rpm_explicit"	: ``(ExplicitPackageDialog()),
+	];
+
+	map sequence = $[
+		"ws_start" : "summary",
+		"summary" : $[
+			`abort		: `abort,
+			`image_locale	: "locale",
+			`users		: "users_modify",
+			`addon		: "addon",
+			`driver		: "driver",
+			`options	: "options",
+			`rpm_dist	: "rpm_dist",
+			`rpm_explicit	: "rpm_explicit",
+			`next		: `next,
+		],
+		"locale" : $[
+			`abort		: "summary",
+			`next		: "timezone",
+		],
+		"timezone" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"addon" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"driver" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"users_modify" : $[
+			`reallyback	: "summary",
+			`abort		: "summary",
+			`next		: "users_export",
+		],
+		"users_export" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"options" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"rpm_dist" : $[
+			`cancel		: "summary",
+			`abort		: "summary",
+			`next		: "summary",
+		],
+		"rpm_explicit" : $[
+			`abort		: "summary",
+			`next		: "summary",
+		],
+	];
+
+	//return Sequencer::Run(aliases, sequence);
+
+
+//	UI::OpenDialog(nil);
+	Wizard::CreateDialog();
+//	Wizard::OpenAcceptDialog();
+//	Wizard::OpenAcceptAbortStepsDialog();
+//	Wizard::SetDesktopIcon("slepos-image-builder");
+
+	any ret = Sequencer::Run(aliases, sequence);
+
+	UI::CloseDialog();
+	return ret;
+}
+
+
+/**
+ * Workflow for building an image
+ * @return sequence result
+ */
+any BuildImageSequence() {
+
+	map aliases = $[
+		"options"	: ``(BuildOptionsDialog()),
+		"build"		: ``(BuildImageDialog()),
+	];
+
+	map sequence = $[
+		"ws_start" : "options",
+		"options" : $[
+			`abort	: `abort,
+			`next	: "build",
+		],
+		"build" : $[
+			`abort	: `abort,
+			`next	: `next,
+		],
+	];
+
+	//return Sequencer::Run(aliases, sequence);
+
+	Wizard::CreateDialog();
+	Wizard::SetDesktopIcon("slepos-image-builder");
+
+	any ret = Sequencer::Run(aliases, sequence);
+
+	UI::CloseDialog();
+	return ret;
+}
+
+
+/**
+ * Workflow for creating a delta image
+ * @return sequence result
+ */
+any DeltaImageSequence(string first_key, string second_key) {
+
+	map aliases = $[
+		"build"	: ``(DeltaImageDialog(first_key, second_key)),
+	];
+
+	map sequence = $[
+		"ws_start" : "build",
+		"build" : $[
+			`abort	: `abort,
+			`next	: `next,
+		],
+	];
+
+	//return Sequencer::Run(aliases, sequence);
+
+	Wizard::CreateDialog();
+	Wizard::SetDesktopIcon("slepos-image-builder");
+
+	any ret = Sequencer::Run(aliases, sequence);
+
+	UI::CloseDialog();
+	return ret;
+}
+
+
+
+/* EOF */
+}

@@ -1,0 +1,73 @@
+/**
+ * File:	clients/slepos-image-builder.ycp
+ * Package:	Configuration of slepos-image-builder
+ * Summary:	Main file
+ * Authors:	Michael G. Fritch <mgfritch@novell.com>
+ *
+ * $Id: slepos-image-builder.ycp,v 1.9 2004/02/05 15:16:57 msvec Exp $
+ *
+ * Main file for slepos-image-builder configuration. Uses all other files.
+ */
+
+{
+
+/***
+ * <h3>Configuration of slepos-image-builder</h3>
+ */
+
+textdomain "slepos-image-builder";
+
+/* The main () */
+y2milestone ("----------------------------------------");
+y2milestone ("SleposImageBuilder module started");
+
+import "Progress";
+import "Report";
+import "Summary";
+import "CommandLine";
+
+include "slepos-image-builder/wizards.ycp";
+
+map cmdline_description = $[
+    "id"	: "slepos-image-builder",
+    /* Command line help text for the Xslepos-image-builder module */
+    "help"	: _("Configuration of slepos-image-builder"),
+    "guihandler"        : SleposImageBuilderSequence,
+    "initialize"        : SleposImageBuilder::Read,
+    "finish"            : SleposImageBuilder::Write,
+    "actions"           : $[
+	// FIXME TODO: fill the functionality description here
+    ],
+    "options"		: $[
+	// FIXME TODO: fill the option descriptions here
+    ],
+    "mapping"		: $[
+	// FIXME TODO: fill the mappings of actions and options here
+    ]
+];
+
+/* is this proposal or not? */
+boolean propose = false;
+list args = WFM::Args();
+if(size(args) > 0) {
+    if(is(WFM::Args(0), path) && WFM::Args(0) == .propose) {
+        y2milestone("Using PROPOSE mode");
+        propose = true;
+    }
+}
+
+/* main ui function */
+any ret = nil;
+
+if(propose) ret = SleposImageBuilderAutoSequence();
+else ret = CommandLine::Run(cmdline_description);
+y2debug("ret=%1", ret);
+
+/* Finish */
+y2milestone("SleposImageBuilder module finished");
+y2milestone("----------------------------------------");
+
+return ret;
+
+/* EOF */
+}

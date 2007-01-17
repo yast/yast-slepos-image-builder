@@ -1,0 +1,658 @@
+/**
+ * File:	modules/SleposImageBuilder.ycp
+ * Package:	Configuration of slepos-image-builder
+ * Summary:	SleposImageBuilder settings, input and output functions
+ * Authors:	Michael G. Fritch <mgfritch@novell.com>
+ *
+ * $Id: SleposImageBuilder.ycp,v 1.13 2004/03/15 13:18:08 mvidner Exp $
+ *
+ * Representation of the configuration of slepos-image-builder.
+ * Input and output routines.
+ */
+
+{
+
+module "SleposImageBuilder";
+textdomain "slepos-image-builder";
+
+import "Progress";
+import "Report";
+import "Summary";
+import "Popup";
+import "SleposUtils";
+import "SleposImageBuilderXml";
+
+include "slepos-image-builder/routines.ycp";
+
+global map ImagesMap = $[]; // map of available images
+global map SettingsMap = $[]; // map of current UI settings
+global string ImageDescrDir = "/opt/SLES/POS/system";
+
+global map current_image = $[]; //FIXME: THIS VARIABLE MUST BE REMOVED!!!! IT IS NO LONGER VALID!
+
+
+/**
+ * Prototypes
+ */
+global boolean Modified();
+
+
+/**
+ * Data was modified?
+ */
+global boolean modified = false;
+
+
+/**
+ */
+global boolean proposal_valid = false;
+
+
+/**
+ * Write only, used during autoinstallation.
+ * Don't run services and SuSEconfig, it's all done at one place.
+ */
+global boolean write_only = false;
+
+
+/**
+ * Abort function
+ * return boolean return true if abort
+ */
+global boolean() AbortFunction = Modified;
+
+
+/**
+ * Abort function
+ * @return boolean return true if abort
+ */
+global define boolean Abort() ``{
+    if(AbortFunction != nil)
+    {
+	return AbortFunction () == true;
+    }
+    return false;
+}
+
+
+/**
+ * Data was modified?
+ * @return true if modified
+ */
+global boolean Modified() {
+    y2debug("modified=%1",modified);
+    return modified;
+}
+
+
+/**
+ * Reads the settings from the ImageSpecification.xml of a given ImageKey.
+ * The xml settings are stored in the SleposImageBuilderXml.pm module.
+ * The global value SettingsMap["ImageKey"] is set to the passed in ImageKey
+ * @param ImageKey string to an existing image descr tree (i.e. 'minimal-2.0.21')
+ * @return boolean true on success
+ */
+global boolean setCurrentImage(string ImageKey) {
+	if (ImageKey != nil && ImageKey != "") {
+		y2milestone("Reading XML for image %1", ImageKey);
+		string XmlFile = sformat("%1/%2/ImageSpecification.xml", ImageDescrDir, ImageKey);
+		if (SleposImageBuilderXml::Read(XmlFile)) {
+			SettingsMap["ImageKey"] = ImageKey;
+			return true;
+		}
+	}
+	// key is not valid or failed to read the image xml settings
+	Report::Error(sformat(_("Failed to read image settings for the following image: %1"), ImageKey));
+	SettingsMap["ImageKey"] = ""; // SleposImageBuilderXml does not contain valid xml doc structure!
+	return false;
+}
+
+
+/**
+ * Returns a map containing references to all of the known configured images.
+ * @return map
+ */
+global map getImageDescrTrees() {
+
+	map ret_images = $[]; // Map of image values to return
+
+	// get a list of all known images
+	string cmd = "/usr/bin/xscr --list";
+	y2milestone("Executing:%1", cmd);
+	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
+	if (retmap["exit"]:-1 != 0) {
+		SleposUtils::errorLogging(_("Failed to read the list of image description trees."), retmap, cmd);
+		return nil;
+	}
+	y2milestone("\n%1", retmap["stdout"]:"");
+	list<string> ImageList = splitstring(retmap["stdout"]:"", "\n");
+
+	// Read in the values for each image into a map
+	foreach(string ImageStr, ImageList, {
+		string ImageKey = regexpsub(ImageStr, ".*Image:[ \t]*(.*)[ \t]*Ver*", "\\1");
+		if (ImageKey != nil && ImageKey != "") {
+			ImageKey = SleposUtils::CleanUpString(ImageKey);
+			if (setCurrentImage(ImageKey)) {
+				map ImageValues = $[];
+				string xqlpath = "//ImageSpecification/@ImageName";
+				ImageValues = union(ImageValues, $[xqlpath : SleposImageBuilderXml::GetValueString(xqlpath)]);
+				xqlpath = "//ImageSpecification/@ImageVersion";
+				ImageValues = union(ImageValues, $[xqlpath : SleposImageBuilderXml::GetValueString(xqlpath)]);
+/*				xqlpath = "//ImageSpecification/@Type";
+				ImageValues = union(ImageValues, $[xqlpath : SleposImageBuilderXml::GetValueString(xqlpath)]);
+				xqlpath = "//ImageSpecification/@ImageType";
+				ImageValues = union(ImageValues, $[xqlpath : SleposImageBuilderXml::GetValueString(xqlpath)]);*/
+				xqlpath = "//RPMSpecifications/DistributionSource/@ImageClass";
+				ImageValues = union(ImageValues, $[xqlpath : SleposImageBuilderXml::GetValueString(xqlpath)]);
+
+				if (ImageValues != nil && size(ImageValues) > 0) {
+					ret_images = add(ret_images, ImageKey, ImageValues);
+				}
+			}
+		}
+	});
+
+	y2milestone("getImageDescrTrees returned: %1", ret_images);
+	return ret_images;
+}
+
+
+
+/**
+ * Duplicates an image description tree using the xscr --create command
+ * @param image_key to an existing image in the ImagesMap
+ * @param new_image_key name of the new image
+ * @param distribution to base image (nld or sles), if nil specified, the distribuiton of image_key will be used
+ * @return boolean true on success
+ */
+global boolean duplicateImageDescrTree(string image_key, string new_image_key, string dist) {
+	if (image_key == nil || image_key == "") return false; // key is not valid
+	if (new_image_key == nil || new_image_key == "") return false;
+
+	string cmd = sformat("/usr/bin/xscr --create '%1' --image '%2'", new_image_key, image_key);
+	if (dist != nil && dist != "") cmd = sformat("%1 --dist %2", cmd, dist); // distro specified
+
+	y2milestone("Duplicating image description tree %1 to %2", image_key, new_image_key);
+	y2milestone("Executing: %1", cmd);
+	
+	// duplicate the image using xscr
+	Popup::ShowFeedback(_("Duplicating Image Description Tree..."), _("This might take a while."));
+	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
+	Popup::ClearFeedback();
+
+	if (retmap["exit"]:-1 != 0) { // an error occured
+		y2error("Failed to duplicate the image description tree directory using the following command: %1", cmd);
+		SleposUtils::errorLogging(_("Image tree duplication failed."), retmap, cmd);
+		//Report::Error(sformat(_("Image tree duplication failed.\n\n%1"), retmap["stderr"]:"") );
+		return false;
+	}
+
+	return true;
+}
+
+
+
+/**
+ * Deletes an image description tree using the command 'rm -r'
+ * @param key to image in the ImagesMap
+ * @return boolean true on success
+ */
+global boolean deleteImageDescrTree(string key) {
+	if (key == nil || key == "") return false; // key is not valid
+	string cmd = sformat("rm -r %1/%2", ImageDescrDir, key);
+	y2milestone("Removing image description tree %1", key);
+	y2milestone("Executing: %1", cmd);
+	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
+	if (retmap["exit"]:-1 != 0) {
+		y2error("Failed to remove the image description tree directory using the following command: %1", cmd);
+		SleposUtils::errorLogging(_("Removal of the selected image description tree failed."), retmap, cmd);
+		return false;
+	}
+	ImagesMap = remove(ImagesMap, key);
+	if (ImagesMap == nil) {
+		y2error("Could not remove image '%1', from the ImagesMap", key);
+		//Report::Error(_("Failed to remove the selected image description tree."));
+		ImagesMap = getImageDescrTrees();
+		if(ImagesMap == nil) Report::Error(_("Failed to read the Image Builder settings.")); 
+		return false;
+	}
+	return true;
+}
+
+
+/**
+ * Returns the name of the addon
+ * Example: /opt/SLES/POS/templates/addons/firefox.xml -> firefox
+ * @param full filename path of the addon (i.e. /opt/SLES/POS/templates/addons/firefox.xml)
+ * @return string addon name
+ */
+global string getAddonName(string filename) {
+	return regexpsub(filename, ".*/(.*)\\..*", "\\1");
+}
+
+
+/**
+ * Returns a list<string> of supported addons for an image
+ * @return list<string>
+ */
+global list<string> getSupportedAddons() {
+	string addons_dir = ImageDescrDir + "/templates/addons/";
+	list<string> addons_list = (list<string>) SCR::Read(.target.dir, addons_dir);
+	y2milestone("addons_list: %1", addons_list);
+	addons_list = maplist ( string addon_filename, addons_list, { return sformat("%1%2", addons_dir, addon_filename); });
+	y2milestone("getSupportedAddons returning: %1", addons_list);
+	return addons_list;
+}
+
+
+/**
+ * Returns a string description for a specified addon
+ * @param string addon xml filename
+ * @return description string
+ */
+global string getAddonDescription(string xmlfile) {
+	string descr = "";
+	if (!SleposImageBuilderXml::SaveDocState()) return "";
+	if (!SleposImageBuilderXml::Read(xmlfile)) return "";
+	descr = SleposImageBuilderXml::GetValueString("/ImageSpecification/Description");
+	SleposImageBuilderXml::RestoreDocState();
+	return descr;
+}
+
+
+/**
+ * Returns a list<string> of supported drivers for an image
+ * @return list<string>
+ */
+global list<string> getSupportedDrivers() {
+	string drivers_dir = ImageDescrDir + "/templates/drivers/";
+	list<string> drivers_list = (list<string>) SCR::Read(.target.dir, drivers_dir);
+	y2milestone("_list: %1", drivers_list);
+	drivers_list = maplist ( string driver_filename, drivers_list, { return sformat("%1%2", drivers_dir, driver_filename); });
+	y2milestone("getSupportedDrivers returning: %1", drivers_list);
+	return drivers_list;
+}
+
+
+/**
+ * Returns a list<string> of supported languages(locale) for any image
+ * @return list<string>
+ */
+global list<string> getSupportedLocale() {
+	string locale_dir = ImageDescrDir + "/templates/locale/";
+	list<string> locale_list = (list<string>) SCR::Read(.target.dir, locale_dir);
+	locale_list = add(locale_list, "en_US"); // NOTE: locale en_US is supported in all images by default
+	y2milestone("getSupportedLocale returning: %1", locale_list);
+	return locale_list;
+}
+
+
+/**
+ * Returns a string description for a specified image
+ * @param image_key
+ * @return description string
+ */
+global string getImageDescription(string image_key) {
+	// Try and read the <Description> tag out of the ImageSpecification.xml
+	string descr = SleposImageBuilderXml::GetValueString("/ImageSpecification/Description");
+	if (descr != nil && descr != "") return descr;
+
+	// if the description is not found in the xml, try reading it from the IMAGE cfg file.
+	string cmd = sformat("cat %1/%2/IMAGE", ImageDescrDir, image_key);
+	y2milestone("Executing: %1", cmd);
+	map retmap = (map) SCR::Execute(.target.bash_output, cmd);
+	descr = retmap["stdout"]:"";
+	if (descr == nil) descr = "";
+	return descr;
+}
+
+
+/**
+ * Returns the descr. tree of the cdboot image with with greatest version
+ * @return string latest cdboot descr. tree
+ */
+global string getRecentCDBootTree() {
+	// search for all image descr trees that contain the directory name cdboot.
+	string cmd = sformat("find '%1/' -maxdepth 1 -iname '*cdboot*'", ImageDescrDir);
+	y2milestone("Executing: %1", cmd);
+	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
+	string stdout = retmap["stdout"]:"";
+	if (retmap["exit"]:-1 != 0 || stdout == nil || stdout == "") return nil; // nothing found.
+	// create a list of the search results, sort it, and choose the last element (highest version)
+	list<string> tmplist = splitstring(stdout, "\n");
+	tmplist = sort(tmplist);
+	string recentCDBoot = tmplist[size(tmplist)-1]:""; 
+	// remove the full path and return only the directory name of the cdboot image descr. tree
+	tmplist = splitstring(recentCDBoot, "/");
+	recentCDBoot = tmplist[size(tmplist)-1]:"";
+	return SleposUtils::CleanUpString(recentCDBoot);
+}
+
+
+/**
+ * Read all slepos-image-builder settings
+ * @return true on success
+ */
+global boolean Read() {
+
+	/* SleposImageBuilder read dialog caption */
+	string caption = _("Initializing Image Builder");
+
+	integer steps = 2;
+
+	integer sl = 500;
+	sleep(sl);
+
+	Progress::New( caption, " ", steps, [
+		/* Progress stage 1/1 */
+		_("Read Image Description Trees")
+	], [
+		/* Progress step 1/1 */
+		_("Reading Image Description Trees..."),
+		/* Progress finished */
+		_("Finished")
+	],
+		""
+	);
+
+
+
+
+
+
+
+// FIXME: the below code if for debugging! must be removed!
+/*
+	any testval = SleposImageBuilderXml::Read(sformat("%1/testimage-1.0.0/ImageSpecification.xml", ImageDescrDir));
+	y2milestone("testval=%1", testval);
+
+	// test retriving node values
+	testval = SleposImageBuilderXml::GetValueString("/ImageSpecification/@ImageName");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("/ImageSpecification/@ImageName");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("/ImageSpecification/IncludeSpecificationList/IncludeSpecification/@URI");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("invalidpath");
+	y2milestone("invalid path (list)! testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueString("invalidpath");
+	y2milestone("invalid path (string)! testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("/ImageSpecification/RPMSpecifications/DistributionSource/@*");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("/ImageSpecification/RPMSpecifications/DistributionSource");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetValueList("/ImageSpecification/IncludeSpecificationList");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetAttributeMap("/ImageSpecification/RPMSpecifications/DistributionSource");
+	y2milestone("testval=%1", testval);
+	testval = SleposImageBuilderXml::GetAttributeMap("/ImageSpecification/IncludeSpecificationList");
+	y2milestone("testval=%1", testval);
+
+	// test setting node values
+	testval = SleposImageBuilderXml::SetAttribute("/ImageSpecification", "ImageName", "xxxnewvaluefromYaST");
+	y2milestone("SetAttribute returned: %1", testval);
+	testval = SleposImageBuilderXml::SetAttribute("/ImageSpecification/UserGroupSpecifications", "newattr2", "1.0.0");
+	y2milestone("SetAttribute returned: %1", testval);
+	testval = SleposImageBuilderXml::SetElement("/ImageSpecification/UserGroupSpecifications", "NEWUSERNODE");
+	y2milestone("SetElement returned: %1", testval);
+
+	// test deleting nodes
+	testval = SleposImageBuilderXml::RemoveNode("/ImageSpecification/IncludeSpecificationList");
+	y2milestone("RemoveNode returned: %1", testval);
+	testval = SleposImageBuilderXml::RemoveNode("/ImageSpecification/IncludeSpecification/BadElement");
+	y2milestone("RemoveNode returned: %1", testval);
+	testval = SleposImageBuilderXml::RemoveAttribute("/ImageSpecification", "ImageName");
+	y2milestone("RemoveNode returned: %1", testval);
+	testval = SleposImageBuilderXml::RemoveAttribute("/ImageSpecification", "BadName");
+	y2milestone("RemoveNode returned: %1", testval);
+
+	testval = SleposImageBuilderXml::Write();
+	y2milestone("Write returned: %1", testval);
+
+	return false;
+*/
+
+
+
+
+
+
+
+
+
+	if(Abort()) return false;
+	Progress::NextStage();
+
+	/* Error message */
+/*	ImagesMap = getImageDescrTrees();
+	if(ImagesMap == nil) {
+		Report::Error(_("Failed read the Image Builder settings."));
+		return false;
+	}*/
+	sleep(sl);
+
+	if(Abort()) return false;
+	/* Progress finished */
+	Progress::NextStage();
+	sleep(sl);
+
+	if(Abort()) return false;
+	return true;
+}
+
+
+
+/**
+ * Write all slepos-image-builder settings
+ * @return true on success
+ */
+global boolean Write() {
+	
+	/* SleposImageBuilder read dialog caption */
+	string caption = _("Saving Image Builder Settings");
+	
+	integer steps = 2;
+	
+	integer sl = 500;
+	sleep(sl);
+	
+	Progress::New(caption, " ", steps, [
+		/* Progress stage 1/1 */
+		_("Write Image Builder settings")
+	], [
+		/* Progress step 1/1 */
+		_("Writing Image Builder settings..."),
+		/* Progress finished */
+		_("Finished")
+	],
+		""
+	);
+	
+	// write settings
+	if(Abort()) return false;
+	Progress::NextStage();
+	/* Error message */
+	if(false) Report::Error (_("Failed write Image Builder settings."));
+	sleep(sl);
+	
+	
+	if(Abort()) return false;
+	/* Progress finished */
+	Progress::NextStage();
+	sleep(sl);
+	
+	if(Abort()) return false;
+	return true;
+}
+
+/**
+ * Get all slepos-image-builder settings from the first parameter
+ * (For use by autoinstallation.)
+ * @param settings The YCP structure to be imported.
+ * @return boolean True on success
+ */
+global boolean Import (map settings) {
+    // TODO FIXME: your code here (fill the above mentioned variables)...
+    return true;
+}
+
+/**
+ * Dump the slepos-image-builder settings to a single map
+ * (For use by autoinstallation.)
+ * @return map Dumped settings (later acceptable by Import ())
+ */
+global map Export () {
+    // TODO FIXME: your code here (return the above mentioned variables)...
+    return $[];
+}
+
+
+
+/**
+ * Generates an HTML encoded list items for the Summary screens.
+ * @return string
+ */
+define string XAddListItem(string summary, string key, string value, boolean makeBold) {
+        if (value == nil || value == "") {
+		summary = summary + sformat("<li><p><b><font color=red>%1</font></b>%2</p></li>", key, value);
+		proposal_valid = false; // proposal is missing a value ... must block the user from moving forward
+	}
+        else if (makeBold) summary = summary + sformat("<li><p><b>%1</b>%2</p></li>", key, value);
+        else summary = Summary::AddListItem(summary, sformat("%1%2", key, value));
+        return summary;
+}
+
+
+/**
+ * Create a textual summary 
+ * @return summary of the current configuration
+ */
+global list Summary() {
+	string summary = "";
+
+	// add-ons
+	summary = Summary::AddHeader(summary, "<b><a href=\"`addon\">" + _("Add-ons") + "</a></b>");
+        summary = Summary::OpenList(summary);
+	list<string> image_addons = (list<string>) SleposImageBuilderXml::GetValueList("//IncludeSpecificationList/IncludeSpecification/@URI");
+	boolean itemAdded = false;
+	if (image_addons != nil && size(image_addons) > 0) {
+		list<string> supported_addons = getSupportedAddons();
+		image_addons = sort(image_addons);
+		foreach(string addon_filename, image_addons, {
+			if (contains(supported_addons, addon_filename)) {
+				summary = XAddListItem(summary, "", getAddonName(addon_filename), false);
+				itemAdded = true;
+			}
+		});
+	}
+	if (!itemAdded) summary = XAddListItem(summary, "", _("No image add-ons selected"), false);
+	summary = Summary::CloseList(summary);
+
+	// drivers
+	summary = Summary::AddHeader(summary, "<b><a href=\"`driver\">" + _("Drivers") + "</a></b>");
+        summary = Summary::OpenList(summary);
+	list<string> image_drivers = (list<string>) SleposImageBuilderXml::GetValueList("//IncludeSpecificationList/IncludeSpecification/@URI");
+	itemAdded = false;
+	if (image_drivers != nil && size(image_drivers) > 0) {
+		list<string> supported_drivers = getSupportedDrivers();
+		image_drivers = sort(image_drivers);
+		foreach(string driver_filename, image_drivers, {
+			if (contains(supported_drivers, driver_filename)) {
+				summary = XAddListItem(summary, "", getAddonName(driver_filename), false);
+				itemAdded = true;
+			}
+		});
+	}
+	if (!itemAdded) summary = XAddListItem(summary, "", _("No image drivers selected"), false);
+
+	summary = Summary::CloseList(summary);
+
+
+	// locale
+	summary = Summary::AddHeader(summary, "<b><a href=\"`image_locale\">" + _("Localization") + "</a></b>");
+        summary = Summary::OpenList(summary);
+        summary = XAddListItem(summary, _("Locale: "), getLanguageString(SleposImageBuilderXml::GetValueString("//ImageSpecification/@Locale")), true);
+	summary = XAddListItem(summary, _("Keytable: "), getKeyboardString(SleposImageBuilderXml::GetValueString("//ImageSpecification/@Keytable")), true);
+	summary = XAddListItem(summary, _("Timezone: "), SleposImageBuilderXml::GetValueString("//ImageSpecification/@Timezone"), true);
+	summary = Summary::CloseList(summary);
+
+
+	// users and groups
+	summary = Summary::AddHeader(summary, "<b><a href=\"`users\">" + _("Users / Groups") + "</a></b>");
+	summary = Summary::OpenList(summary);
+      //  summary = Summary::AddListItem(summary, _("<b><font color=red>FIXME: need to add user and groups summary!</font></b>"));
+	map users_map = SleposImageBuilderXml::GetUserGroupSpecifications();
+	boolean changes = false;
+	if (users_map["users"]:[] != nil && users_map["users"]:[] != []) {
+		foreach (map user_element, users_map["users"]:[], {
+			if (user_element != nil) {
+				string username = user_element["username"]:"";
+				string uid = user_element["uid"]:"";
+				if (username != nil && username != "" && uid != nil && uid != "") {
+					summary = XAddListItem(summary, _("Add User: "), sformat("%1 %2", uid, username), true);
+					changes = true;
+				}
+			}
+		});
+	}
+	//FIXME: must add summary information for group settings
+	if (!changes) summary = XAddListItem(summary, "", _("No changes to the default user/group settings"), false);
+	summary = Summary::CloseList(summary);
+
+	// image options
+	summary = Summary::AddHeader(summary, "<b><a href=\"`options\">" + _("Image Options") + "</a></b>");
+	summary = Summary::OpenList(summary);
+	summary = XAddListItem(summary, _("Image type: "), SleposImageBuilderXml::GetValueString("//ImageSpecification/@ImageType"), true);
+	summary = XAddListItem(summary, _("Image filesystem: "), SleposImageBuilderXml::GetValueString("//ImageSpecification/@Type"), true);
+	summary = Summary::CloseList(summary);
+
+	// software (disto rpm packages - copied by POSCDTool)
+	summary = Summary::AddHeader(summary, "<b><a href=\"`rpm_dist\">" + _("Additional Software") + "</a></b>");
+	summary = Summary::OpenList(summary);
+	list<string> rpmlist = sort(SleposImageBuilderXml::GetValueList("/ImageSpecification/RPMSpecifications/RPMIncludeList/RPMSet/RPMList/RPM/@Name"));
+	if (rpmlist != nil && size(rpmlist) > 0) {
+		foreach(string rpm, rpmlist, {
+			summary = XAddListItem(summary, "", rpm, true);
+		});
+	}
+	else summary = XAddListItem(summary, "", _("No additional software selected"), false);
+	summary = Summary::CloseList(summary);
+
+	// 3rd party software (rpm packages manually added by the user...ExplicitPath)
+	summary = Summary::AddHeader(summary, "<b><a href=\"`rpm_explicit\">" + _("3rd Party Software") + "</a></b>");
+	summary = Summary::OpenList(summary);
+	rpmlist = sort(SleposImageBuilderXml::GetValueList("/ImageSpecification/RPMSpecifications/RPMIncludeList/RPMSet/ExplicitPath/@URI"));
+	if (rpmlist != nil && size(rpmlist) > 0) {
+		foreach(string rpm, rpmlist, {
+			summary = XAddListItem(summary, "", rpm, true);
+		});
+	}
+	else summary = XAddListItem(summary, "", _("No 3rd party software selected"), false);
+	summary = Summary::CloseList(summary);
+
+
+
+/*********************************************
+ FIXME: MUST do some basic summary checking to ensure the generated summary is accurate...then must set propsal_valid to true/false...
+**********************************************/
+proposal_valid = true;
+
+
+
+	return [ summary, [] ];
+}
+
+
+/**
+ * Return packages needed to be installed and removed during
+ * Autoinstallation to insure module has all needed software
+ * installed.
+ * @return map with 2 lists.
+ */
+global map AutoPackages() {
+    // TODO FIXME: your code here...
+    return $[ "install":[], "remove":[] ];
+}
+
+/* EOF */
+}

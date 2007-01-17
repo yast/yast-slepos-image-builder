@@ -1,0 +1,63 @@
+/**
+ * File:	include/slepos-image-builder/complex.ycp
+ * Package:	Configuration of slepos-image-builder
+ * Summary:	Dialogs definitions
+ * Authors:	Michael G. Fritch <mgfritch@novell.com>
+ *
+ * $Id: complex.ycp,v 1.6 2004/02/05 15:16:57 msvec Exp $
+ */
+
+{
+
+textdomain "slepos-image-builder";
+
+import "Label";
+import "Popup";
+import "Wizard";
+import "Wizard_hw";
+import "SleposImageBuilder";
+import "Report";
+
+include "slepos-image-builder/helps.ycp";
+
+/**
+ * Return a modification status
+ * @return true if data was modified
+ */
+boolean Modified() {
+    return SleposImageBuilder::Modified();
+}
+
+boolean ReallyAbort() {
+    return !SleposImageBuilder::Modified() || Popup::ReallyAbort(true);
+}
+
+boolean PollAbort() {
+    return UI::PollInput() == `abort;
+}
+
+/**
+ * Read settings dialog
+ * @return `abort if aborted and `next otherwise
+ */
+symbol ReadDialog() {
+    Wizard::RestoreHelp(HELPS["read"]:"");
+    // SleposImageBuilder::AbortFunction = PollAbort;
+    boolean ret = SleposImageBuilder::Read();
+    return ret ? `next : `abort;
+}
+
+/**
+ * Write settings dialog
+ * @return `abort if aborted and `next otherwise
+ */
+symbol WriteDialog() {
+    Wizard::RestoreHelp(HELPS["write"]:"");
+    // SleposImageBuilder::AbortFunction = PollAbort;
+    boolean ret = SleposImageBuilder::Write();
+    return ret ? `next : `abort;
+}
+
+
+/* EOF */
+}

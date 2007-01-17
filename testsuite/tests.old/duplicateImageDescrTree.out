@@ -1,0 +1,26 @@
+Dump	SleposImageBuilder::Modified
+Return	false
+Dump	SleposImageBuilder::duplicateImageDescrTree(nil, nil, nil)
+Return	false
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-1.0.0, nil, nil)
+Return	false
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-1.0.0, minimal-1.0.0, nil)
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-1.0.0'" $["exit":0, "stderr":"", "stdout":""]
+Return	true
+Dump	SleposImageBuilder::duplicateImageDescrTree(nil, minimal-1.0.0, nil)
+Return	false
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-2.0.21, minimal-1.0.0, nil)
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-2.0.21'" $["exit":0, "stderr":"", "stdout":""]
+Return	true
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-2.0.21, minimal-1.0.0, )
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-2.0.21'" $["exit":0, "stderr":"", "stdout":""]
+Return	true
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-2.0.21, minimal-1.0.0, NLD)
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-2.0.21' --dist NLD" $["exit":0, "stderr":"", "stdout":""]
+Return	true
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-2.0.21, minimal-1.0.0, SLES)
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-2.0.21' --dist SLES" $["exit":0, "stderr":"", "stdout":""]
+Return	true
+Dump	SleposImageBuilder::duplicateImageDescrTree(minimal-2.0.21, minimal-1.0.0, NL)
+Execute	.target.bash_output "/usr/bin/xscr --create 'minimal-1.0.0' --image 'minimal-2.0.21' --dist NL" $["exit":0, "stderr":"", "stdout":""]
+Return	true

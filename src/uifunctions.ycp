@@ -1,0 +1,283 @@
+/**
+ * File:        slepos-image-builder/uifunctions.ycp
+ * Package:     Configuration slepos-image-builder
+ * Summary:     Image Builder dialogs handling functions
+ * Authors:     Michael G. Fritch <mgfritch@novell.com>
+ *
+ * $Id: uifunctions.ycp 22002 2005-02-28 13:36:28Z locilka $
+ *
+ * Image description tree management/configuration dialogs handling.
+ */
+{
+
+textdomain "slepos-image-builder";
+
+import "Popup";
+import "Wizard";
+import "SleposImageBuilder";
+//import "SleposUtils";
+
+include "slepos-image-builder/subdialogs.ycp";
+include "slepos-image-builder/subwizards.ycp";
+include "slepos-image-builder/complex.ycp";
+
+// GLOBAL UI CONFIGURATION
+term all_popup_definition = `opt(`decorated,`centered);
+
+// EXAMPLE FUNCTIONS
+/**
+ *    void ExampleInit(string key) {
+ *	y2milestone("Example Init");
+ *    }
+ *
+ *    symbol ExampleHandle(string key, map event) {
+ *	any ret = event["ID"]:nil;
+ *	y2milestone("Example Handle");
+ *	return nil;
+ *    }
+ *
+ *    void ExampleStore(string key, map event) {
+ *	any ret = event["ID"]:nil;
+ *	y2milestone("Example Store");
+ *    }
+ *
+ */
+
+
+// UI Functions
+/**
+ * Function disables the back button.
+ * Fake function for CWM Tree Widget.
+ */
+void DisableBackButton (string key) {
+	UI::ChangeWidget(`id(`back), `Enabled, false);
+}
+
+
+
+/**
+ * Check is a given text widget has been completed, disply error if widget is empty
+ * @param sting id of widget
+ * @return boolean false if widget is empty
+ */
+boolean CheckExistency(string ui_id) {
+	if (UI::QueryWidget(`id(ui_id), `Value) == "") {
+	    UI::SetFocus(`id(ui_id));
+	    // TRANSLATORS: popup message
+	    Popup::Error(_("This entry must be completed."));
+	    return false;
+	}
+	return true;
+}
+
+
+
+/**
+  *******************************************************************
+  * Common Dialog Functions
+  *******************************************************************
+*/
+/**
+ * Function redraws Images Table
+ */
+void RedrawImagesTableDialog(string key) {
+	list <term> table_items = [];
+	// listing all known imaages for the overview table
+	foreach(any image_key, any image_value, SleposImageBuilder::ImagesMap, {
+		if (is(image_key, string) && is(image_value, map) && image_key != nil && image_key != "") {
+			map image_map = (map) image_value;
+			if (image_map["//ImageSpecification/@ImageName"]:nil != nil && image_map["//ImageSpecification/@ImageVersion"]:nil != nil) {
+				table_items = add(table_items, `item( `id(image_key),
+					image_map["//ImageSpecification/@ImageName"]:nil,
+					image_map["//ImageSpecification/@ImageVersion"]:nil,
+					toupper(image_map["//RPMSpecifications/DistributionSource/@ImageClass"]:"")/*,
+					SleposUtils::CleanUpString(SleposImageBuilder::getImageDescription((string)image_key))*/
+				));
+			}
+		}
+	});
+
+	UI::ChangeWidget ( `id("table_images"), `Items, table_items);
+	if (key == "delta_widget") UI::ChangeWidget ( `id("table_images2"), `Items, table_items);
+}
+
+/**
+ * Initializes Images table and SleposImageBuilder::ImagesMap
+ */
+void InitImagesTableDialog(string key) {
+	Popup::ShowFeedback(_("Reading Image Description Trees"), _("Please wait..."));
+	SleposImageBuilder::ImagesMap = SleposImageBuilder::getImageDescrTrees();
+	Popup::ClearFeedback();
+	Wizard::HideAbortButton();
+	Wizard::HideBackButton();
+	Wizard::SetNextButton(`abort, _("&Close"));
+	Wizard::SetDesktopIcon("slepos-image-builder");
+	if(SleposImageBuilder::ImagesMap == nil) Report::Error(_("Cannot read the Image Builder settings."));
+	RedrawImagesTableDialog(key);
+}
+
+
+/**
+  *******************************************************************
+  * Manage Image Dialog Functions
+  *******************************************************************
+*/
+
+
+/**
+ * Handles dialogs to duplicate an image description tree
+ * @param string image_key <name-version>
+ */
+void HandleDuplicateImage (string image_key) {
+	SleposImageBuilder::modified = true;
+	any ret = DuplicateImageSequence();
+	SleposImageBuilder::modified = false;
+	RedrawImagesTableDialog(nil);
+}
+
+
+/**
+ * Handles dialogs to add an image description tree
+ * @param string image_key <name-version>
+ */
+void HandleModifyImage (string image_key) {
+	SleposImageBuilder::modified = true;
+	any ret = ModifyImageSequence(image_key);
+	SleposImageBuilder::modified = false;
+	RedrawImagesTableDialog(nil);
+}
+
+
+/**
+ * Handles popup to remove an image description tree
+ * @param string image_key <name-version>
+ */
+void HandleRemoveImage (string image_key) {
+	if ( Popup::YesNo(_("Are you sure you want to remove the selected image description tree?")) ) {
+		/*if (!SleposImageBuilder::deleteImageDescrTree(image_key)) {
+			Report::Error(_("Failed to remove the selected image description tree."));
+			y2error("Failed to delete the selected image");
+		}*/
+		Popup::ShowFeedback(_("Removing Image Description Tree"), _("Please wait..."));
+		SleposImageBuilder::deleteImageDescrTree(image_key);
+		Popup::ClearFeedback();
+		RedrawImagesTableDialog(nil);
+        }
+}
+
+
+/**
+ * Function handles whole manage images table dialog
+ */
+symbol HandleManageImagesDialog (string key, map event) {
+	any ret = event["ID"]:nil;
+
+	string current_item = "";
+	if (ret == "duplicate_image" || ret == "modify_image" || ret == "remove_image" || ret == "build_image") {
+		current_item = (string) UI::QueryWidget(`id ("table_images"), `CurrentItem);
+		if ( ! SleposImageBuilder::setCurrentImage(current_item)) return nil;
+	}
+
+	// push buttons below the table (add, modify, remove)
+	if (ret == "duplicate_image") HandleDuplicateImage(current_item); // duplicate an existing image
+	else if (ret == "modify_image") HandleModifyImage(current_item); // modifying an image
+	else if (ret == "remove_image") HandleRemoveImage(current_item); // delete an image
+	else if (ret == "build_image") {
+		SleposImageBuilder::modified = true;
+		BuildImageSequence();
+		SleposImageBuilder::modified = false;
+	}
+	else if (ret == `next || ret == `finish || ret == `back || ret == `abort) return (symbol) ret;
+	else y2error("Unknown return value: %1", ret);
+
+	return nil;
+}
+
+
+
+/**
+  *******************************************************************
+  * Build Image Dialog Functions
+  *******************************************************************
+*/
+
+
+/**
+ * Handles dialog to build an image using an image description tree
+ * @param string image_key <name-version>
+ */
+void HandleBuildImage (string image_key) {
+	any ret = BuildImageSequence();
+	RedrawImagesTableDialog(nil);
+}
+
+
+/**
+ * Function handles whole build images table dialog
+ */
+symbol HandleBuildImagesDialog(string key, map event) {
+	any ret = event["ID"]:nil;
+
+	string current_item = (string) UI::QueryWidget(`id ("table_images"), `CurrentItem);
+	if ( ! SleposImageBuilder::setCurrentImage(current_item)) return nil;
+
+	// push buttons below the table
+	if (ret == "build_image") HandleBuildImage(current_item); // build an image
+	else if (ret == `next || ret == `finish || ret == `back || ret == `abort) return (symbol) ret;
+	else y2error("Unknown return value: %1", ret);
+
+	return nil;
+}
+
+
+
+/**
+  *******************************************************************
+  * Delta Image Dialog Functions
+  *******************************************************************
+*/
+
+
+/**
+ * Handles dialog to build a delta from an image description tree
+ * @param string image_key <name-version>
+ */
+void HandleDeltaImage (string first_key, string second_key) {
+	y2milestone("HandleDeltaImage(%1, %2)", first_key, second_key);
+	any ret = DeltaImageSequence(first_key, second_key);
+	RedrawImagesTableDialog(nil);
+}
+
+
+/**
+ * Function handles whole build delta dialog
+ */
+symbol HandleDeltaImagesDialog(string key, map event) {
+	any ret = event["ID"]:nil;
+
+	// push buttons below the table
+	if (ret == "build_image") {
+		string first_item = (string) UI::QueryWidget(`id ("table_images"), `CurrentItem);
+		if ( ! SleposImageBuilder::setCurrentImage(first_item)) return nil;
+		string second_item = (string) UI::QueryWidget(`id ("table_images2"), `CurrentItem);
+	
+		if ( first_item == nil || first_item == "" || second_item == nil || second_item == "") {
+			Popup::Error(_("An image description tree is missing.\n\nPlease, select an image description tree in each table."));
+			return nil;
+		}
+		if (first_item == second_item) {
+			Popup::Error(_("A delta image cannot be created using two image description trees that are the same.\nPlease, select two image description trees that are not the same."));
+			return nil;
+		}
+
+		HandleDeltaImage(first_item, second_item); // build a delta image
+	}
+	else if (ret == `next || ret == `finish || ret == `back || ret == `abort) return (symbol) ret;
+	else y2error("Unknown return value: %1", ret);
+
+	return nil;
+}
+
+
+/* EOF */
+}
