@@ -13,7 +13,7 @@ textdomain "slepos-image-builder";
 
 import "Arch";
 import "Keyboard";
-import "SleposUsers";
+import "Users";
 import "Language";
 import "SleposImageBuilderXml";
 
@@ -27,38 +27,13 @@ import "SleposImageBuilderXml";
 
 
 /**
- * ONLY FOR SLES 9
- */
-boolean GetUseAscii_SLES9() {
-	boolean use_ascii = false;          // default is utf8 text
-	if ( lookup (UI::GetDisplayInfo(), "TextMode", false ) ) {
-		use_ascii = true;               // fallback to ascii
-	}
-	return use_ascii;
-}
-
-
-/**
- * ONLY FOR SLES 10
- * FIXME: this method must later be merged into the code that references it below (LanguageSelectWidget)
- */
-boolean GetUseAscii_SLES10() {
-	boolean use_ascii = Language::GetTextMode (); // Code for SLES10
-//boolean use_ascii = false; // fix-up so code compiles on SLES9
-	return use_ascii;
-}
-
-
-/**
  * Returns a SelectionBox widget containing all the supported languages
  * @param List of supported locales NOTE: nil may be passed in for this value to use all supported locales
  * @return map<string,list> sorted map of translated languages
  */
 map<string,list> getLanguageSelSort(list<string> supportedLocale) {
 
-	// FIXME: the below two lines must later be replaced with the code from one of the two methods above.
-//	boolean use_ascii = GetUseAscii_SLES9(); // SLES9
-	boolean use_ascii =  GetUseAscii_SLES10(); // SLES10
+	boolean use_ascii = Language::GetTextMode ();
 
 	// FIXME: should we translate the list of languages??? For example, someone who speaks German may not be able to tell the difference between simplified or traditional chinese?
 
@@ -475,7 +450,8 @@ import_values["users"] = users;*/
  */
 any ExportUserSettings() {
 	// retrieve the list of users/groups from SleposUsers.pm
-	any export_values = SleposUsers::Export();
+// FIXME first must be done Import or Read !!!
+	any export_values = Users::Export();
 	y2milestone("SleposUsers::Export() returned: %1", export_values);
 	SleposImageBuilderXml::SetUserGroupSpecifications((map<string, any>) export_values);
 	return `next;

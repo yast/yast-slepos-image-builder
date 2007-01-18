@@ -16,7 +16,7 @@ import "Wizard";
 
 include "slepos-image-builder/complex.ycp";
 include "slepos-image-builder/subdialogs.ycp";
-include "slepos-image-builder/users/wizards.ycp";
+//include "slepos-image-builder/users/wizards.ycp";
 
 /**
  * Workflow for duplicating an existing image descr. tree
@@ -47,6 +47,10 @@ any DuplicateImageSequence() {
 	return ret;
 }
 
+any UsersMainSequence (string start, string image_key) {
+
+    return `back;
+}
 
 /**
  * Workflow for editing an existing image description tree
