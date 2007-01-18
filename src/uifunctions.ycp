@@ -15,7 +15,6 @@ textdomain "slepos-image-builder";
 import "Popup";
 import "Wizard";
 import "SleposImageBuilder";
-//import "SleposUtils";
 
 include "slepos-image-builder/subdialogs.ycp";
 include "slepos-image-builder/subwizards.ycp";
@@ -90,8 +89,7 @@ void RedrawImagesTableDialog(string key) {
 				table_items = add(table_items, `item( `id(image_key),
 					image_map["//ImageSpecification/@ImageName"]:nil,
 					image_map["//ImageSpecification/@ImageVersion"]:nil,
-					toupper(image_map["//RPMSpecifications/DistributionSource/@ImageClass"]:"")/*,
-					SleposUtils::CleanUpString(SleposImageBuilder::getImageDescription((string)image_key))*/
+					toupper(image_map["//RPMSpecifications/DistributionSource/@ImageClass"]:"")
 				));
 			}
 		}

@@ -16,7 +16,6 @@ import "Wizard";
 import "SleposImageBuilder";
 import "SleposImageBuilderXml";
 import "Report";
-import "SleposUtils";
 
 include "slepos-image-builder/helps.ycp";
 include "slepos-image-builder/complex.ycp";
@@ -1238,7 +1237,8 @@ any BuildImageDialog () {
 	if (pos != size(destdir)-1) destdir = destdir + "/"; // string does not contain an slash on the end.
 	if (SleposImageBuilder::SettingsMap["CDBoot"]:false) {
 		// create a directory to store the built images.
-		string iso_date = SleposUtils::GetDateIso8601();
+		map out	= (map) SCR::Execute (.target.bash_output, "date --iso-8601");
+		string iso_date = (out["exit"]:-1 == 0) ? deletechars (out["stdout"]:"", "\n") : "";
 		string image_name_date = sformat("%1-%2", image_key, iso_date); // create a directory for CDBoot images.
 		string image_date_dir = sformat("%1%2.cd", destdir, image_name_date);
 		cmd = sformat("mkdir -p '%1'", image_date_dir);

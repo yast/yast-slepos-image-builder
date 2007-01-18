@@ -19,8 +19,8 @@ import "Progress";
 import "Report";
 import "Summary";
 import "Popup";
-import "SleposUtils";
 import "SleposImageBuilderXml";
+import "String";
 
 include "slepos-image-builder/routines.ycp";
 
@@ -84,6 +84,18 @@ global boolean Modified() {
     return modified;
 }
 
+/**
+ * Clean up a string - remove blanks at begin and end and return first line
+  FIXME test this with real input...
+ * @param string
+ * @return string
+ */
+string clean_up_string (string str) {
+    string workStr = String::CutBlanks (str);
+    integer idx = find (workStr, "\n");
+    if (idx >= 0) workStr = substring (workStr, 0, idx);
+    return workStr;
+}
 
 /**
  * Reads the settings from the ImageSpecification.xml of a given ImageKey.
@@ -121,8 +133,10 @@ global map getImageDescrTrees() {
 	y2milestone("Executing:%1", cmd);
 	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
 	if (retmap["exit"]:-1 != 0) {
-		SleposUtils::errorLogging(_("Failed to read the list of image description trees."), retmap, cmd);
-		return nil;
+	    // error message
+	    Popup::ErrorDetails (_("Failed to read the list of image description trees."),
+		retmap["stderr"]:"");
+	    return nil;
 	}
 	y2milestone("\n%1", retmap["stdout"]:"");
 	list<string> ImageList = splitstring(retmap["stdout"]:"", "\n");
@@ -131,7 +145,7 @@ global map getImageDescrTrees() {
 	foreach(string ImageStr, ImageList, {
 		string ImageKey = regexpsub(ImageStr, ".*Image:[ \t]*(.*)[ \t]*Ver*", "\\1");
 		if (ImageKey != nil && ImageKey != "") {
-			ImageKey = SleposUtils::CleanUpString(ImageKey);
+			ImageKey = clean_up_string(ImageKey);
 			if (setCurrentImage(ImageKey)) {
 				map ImageValues = $[];
 				string xqlpath = "//ImageSpecification/@ImageName";
@@ -174,7 +188,7 @@ global boolean duplicateImageDescrTree(string image_key, string new_image_key, s
 
 	y2milestone("Duplicating image description tree %1 to %2", image_key, new_image_key);
 	y2milestone("Executing: %1", cmd);
-	
+
 	// duplicate the image using xscr
 	Popup::ShowFeedback(_("Duplicating Image Description Tree..."), _("This might take a while."));
 	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
@@ -182,8 +196,8 @@ global boolean duplicateImageDescrTree(string image_key, string new_image_key, s
 
 	if (retmap["exit"]:-1 != 0) { // an error occured
 		y2error("Failed to duplicate the image description tree directory using the following command: %1", cmd);
-		SleposUtils::errorLogging(_("Image tree duplication failed."), retmap, cmd);
-		//Report::Error(sformat(_("Image tree duplication failed.\n\n%1"), retmap["stderr"]:"") );
+		// error message
+		Popup::ErrorDetails (_("Image tree duplication failed."), retmap["stderr"]:"");
 		return false;
 	}
 
@@ -205,7 +219,8 @@ global boolean deleteImageDescrTree(string key) {
 	map retmap = (map)SCR::Execute(.target.bash_output, cmd);
 	if (retmap["exit"]:-1 != 0) {
 		y2error("Failed to remove the image description tree directory using the following command: %1", cmd);
-		SleposUtils::errorLogging(_("Removal of the selected image description tree failed."), retmap, cmd);
+		// error message
+		Popup::ErrorDetails (_("Removal of the selected image description tree failed."), retmap["stderr"]:"");
 		return false;
 	}
 	ImagesMap = remove(ImagesMap, key);
@@ -325,7 +340,7 @@ global string getRecentCDBootTree() {
 	// remove the full path and return only the directory name of the cdboot image descr. tree
 	tmplist = splitstring(recentCDBoot, "/");
 	recentCDBoot = tmplist[size(tmplist)-1]:"";
-	return SleposUtils::CleanUpString(recentCDBoot);
+	return clean_up_string (recentCDBoot);
 }
 
 
